@@ -1,0 +1,57 @@
+syntax = "v1"
+
+info (
+	title:   "Sample Service API"
+	desc:    "标准样板服务：新服务接入的对照标准（backend-design §2），中性 Item 资源无业务含义"
+	author:  "platform"
+	version: "v1"
+)
+
+type Item {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	Desc string `json:"desc"`
+}
+
+// 请求体（json）字段必须标注 optional：
+// goctl 生成的 types 对未标 optional 的请求体字段会带 form required 语义，
+// go-zero httpx.Parse 对 JSON POST/PUT 也会先走 ParseForm，字段缺失即报
+// "field xxx is not set" 并被全局错误出口转为 500（Task 4 实测结论）。
+// 标注 optional 后由 logic 层自行校验必填语义。
+type CreateItemReq {
+	Name string `json:"name,optional"`
+	Desc string `json:"desc,optional"`
+}
+
+type UpdateItemReq {
+	Id   string `path:"id"`
+	Name string `json:"name,optional"`
+	Desc string `json:"desc,optional"`
+}
+
+type ItemIdReq {
+	Id string `path:"id"`
+}
+
+type ListItemsResp {
+	Items []Item `json:"items"`
+	Total int    `json:"total"`
+}
+
+service sample-api {
+	@handler CreateItem
+	post /v1/items (CreateItemReq) returns (Item)
+
+	@handler ListItems
+	get /v1/items returns (ListItemsResp)
+
+	@handler GetItem
+	get /v1/items/:id (ItemIdReq) returns (Item)
+
+	@handler UpdateItem
+	put /v1/items/:id (UpdateItemReq) returns (Item)
+
+	@handler DeleteItem
+	delete /v1/items/:id (ItemIdReq)
+}
+

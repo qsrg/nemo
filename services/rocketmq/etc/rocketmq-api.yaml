@@ -1,0 +1,21 @@
+# rocketmq 服务默认配置（本地 dev 值；真实 secret/密码生产由环境变量注入，
+# 仓库内不得出现真实 MySQL root 密码——本地凭据见 .local-dev.md，不进 git）
+Name: rocketmq-api
+Host: 0.0.0.0
+# 独立服务端口（前端微应用 5279 → 后端 8088；试点：内存模式不建库。
+# 8086/8087 已被 redis/zookeeper 后端占用，勿改回）
+Port: 8088
+Auth:
+  # dev 默认值：与 authz 共享同一 secret，才能解析平台签发 token
+  AccessSecret: dev-authz-access-secret
+  AccessExpire: 3600
+Mysql:
+  # 业务库 nemo_rocketmq（migrations/ 建库 + 种子；重启不丢数据）。
+  # 注意：仓库内不得出现真实 MySQL root 密码——本行为本地 dev 值，
+  # 生产由环境变量注入（secret 等敏感项见 .local-dev.md / 部署文档）。
+  Dsn: "root:abc123456@tcp(127.0.0.1:3306)/nemo_rocketmq?charset=utf8mb4&parseTime=true&loc=Local"
+Authz:
+  # 集中式授权服务根地址（判定 + relations 通用接口）
+  BaseURL: http://127.0.0.1:8084
+  # 单次判定调用超时
+  Timeout: 5s

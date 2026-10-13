@@ -1,0 +1,1106 @@
+syntax = "v1"
+
+info (
+	title:   "Authz Service API"
+	desc:    "集中式授权服务：管理面（组织/成员/角色/规则/资源类型/审计，需管理员角色）与判定面（Check/ListObjects/写关系）"
+	author:  "platform"
+	version: "v1"
+)
+
+// ---------------------------------------------------------------------------
+// 组织（管理面）
+// ---------------------------------------------------------------------------
+// CreateOrgReq 创建组织的请求体。
+type DeleteResourceGrantReq {
+	Object   string `form:"object"`
+	User     string `form:"user"`
+	Relation string `form:"relation"`
+}
+
+type DirectoryUserResp {
+	UserId string `json:"userId"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	// OrgId 用户所属组织（CAS 目录组织架构信息；无归属为空）。
+	OrgId string `json:"orgId"`
+	// OrgName 组织展示名（与 OrgId 同源）。
+	OrgName string `json:"orgName"`
+}
+
+type ListPermissionSubjectsReq {
+	Permission string `form:"permission,optional"`
+}
+
+type ListPermissionSubjectsResp {
+	Subjects []PermissionSubject `json:"subjects"`
+}
+
+type ListResourceGrantsReq {
+	Object   string `form:"object"`
+	Relation string `form:"relation,optional"`
+}
+
+type ListUsersReq {
+	Keyword  string `form:"keyword,optional"`
+	Page     int    `form:"page,optional"`
+	PageSize int    `form:"pageSize,optional"`
+	Ids      string `form:"ids,optional"`
+}
+
+type PermissionSubject {
+	// Kind 主体类型：user（用户）| org（组织）。
+	Kind string `json:"kind"`
+	// Id 裸主体 id：user 为用户名（JWT sub 口径），org 为组织 id。
+	Id string `json:"id"`
+}
+
+type ResourceGrantItem {
+	User     string `json:"user"`
+	Relation string `json:"relation"`
+	Object   string `json:"object"`
+}
+
+type ResourceGrantsResp {
+	Items []ResourceGrantItem `json:"items"`
+	Total int                 `json:"total"`
+}
+
+type UserListResp {
+	Items []DirectoryUserResp `json:"items"`
+	Total int                 `json:"total"`
+}
+
+type CasCallbackReq {
+	// Ticket CAS 服务票据（ST），一次性。
+	Ticket string `json:"ticket,optional"`
+	// Service 回调服务地址，须与 CAS 登录时的 service 一致，否则校验失败。
+	Service string `json:"service,optional"`
+}
+
+// TokenResp 平台 token 签发/刷新结果。
+type TokenResp {
+	// Token 平台 JWT（HS256，1 小时过期）。
+	Token string `json:"token"`
+	// ExpiresAt 过期时间戳（Unix 秒）。
+	ExpiresAt int64 `json:"expiresAt"`
+}
+
+// MeResp 当前用户信息（来自 JWT claims 与用户资料）。
+type MeResp {
+	// Sub 用户 ID（JWT 标准 claim sub）。
+	Sub string `json:"sub"`
+	// Name 用户展示名。
+	Name string `json:"name"`
+	// Tenant 租户（一期固定 platform）。
+	Tenant string `json:"tenant"`
+	// Roles 平台角色列表。
+	Roles []string `json:"roles"`
+}
+
+// CreateApiKeyReq 签发 API key 的请求体（程序/脚本/第三方接入用）。
+type CreateApiKeyReq {
+	// Name key 名称（备注用途，必填——logic 层自校验，空 → 400 AUTH_NAME_REQUIRED）。
+	Name string `json:"name,optional"`
+	// Prefixes 允许访问的资源前缀白名单（scope，permission-design §5.4；
+	// 一期只存不消费，空 = 不限）。
+	Prefixes []string `json:"prefixes,optional"`
+}
+
+// ApiKeyResp API key 签发结果：Key 一次性明文返回，服务端只存摘要。
+type ApiKeyResp {
+	// Key API key 明文（仅本次响应返回一次）。
+	Key string `json:"key"`
+	// Id key 记录 ID（后续管理/吊销用）。
+	Id string `json:"id"`
+}
+
+// ---------------------------------------------------------------------------
+// 路由三组：
+//   公开组（prefix /v1，无 jwt）：CAS 登录跳转与回调；
+//   JWT 组（jwt: Auth，prefix /v1）：当前用户 / 刷新；
+//   管理面组（jwt: Auth + middleware: AdminRole，prefix /v1）：API key 签发
+//   （AdminRole 判定 claims.roles 含 super_admin，否则 403 AUTH_FORBIDDEN）。
+// ---------------------------------------------------------------------------
+// 公开组：CAS 登录入口（302 跳 CAS 与回调接票；handler 侧处理见 Task 2）。
+type CreateOrgReq {
+	// Name 组织名称。
+	Name string `json:"name,optional"`
+	// ParentId 父组织 ID，空表示根组织。
+	ParentId string `json:"parentId,optional"`
+}
+
+// OrgResp 组织信息。
+type OrgResp {
+	// Id 组织 ID。
+	Id string `json:"id"`
+	// Name 组织名称。
+	Name string `json:"name"`
+	// ParentId 父组织 ID，空表示根组织。
+	ParentId string `json:"parentId"`
+}
+
+// OrgListResp 组织列表（分页）。
+type OrgListResp {
+	// Items 组织列表。
+	Items []OrgResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// UpdateOrgReq 更新组织的请求体。
+type UpdateOrgReq {
+	// Id 路径参数：组织 ID。
+	Id string `path:"id"`
+	// Name 组织名称（可选更新）。
+	Name string `json:"name,optional"`
+	// ParentId 父组织 ID（可选更新）。
+	ParentId string `json:"parentId,optional"`
+}
+
+// OrgIdReq 路径参数：组织 ID。
+type OrgIdReq {
+	// Id 组织 ID。
+	Id string `path:"id"`
+}
+
+// ---------------------------------------------------------------------------
+// 成员（管理面）
+// ---------------------------------------------------------------------------
+// MemberReq 添加组织成员的请求体。
+type MemberReq {
+	// OrgId 路径参数：组织 ID。
+	OrgId string `path:"id"`
+	// UserId 被添加的用户 ID。
+	UserId string `json:"userId,optional"`
+}
+
+// MemberResp 组织成员信息。
+type MemberResp {
+	// OrgId 组织 ID。
+	OrgId string `json:"orgId"`
+	// UserId 用户 ID。
+	UserId string `json:"userId"`
+	// DisplayName 用户显示名（CAS 权威；orgsync 同步的用户显示名索引，
+	// 未同步/未知用户为空串，调用方回退展示 UserId）。
+	DisplayName string `json:"displayName"`
+}
+
+// MemberListResp 组织直接成员列表。
+type MemberListResp {
+	// Members 直接成员列表（不含沿层级的继承成员——继承由判定面承担）。
+	Members []MemberResp `json:"members"`
+}
+
+// MemberIdReq 移除组织成员的路径参数。
+type MemberIdReq {
+	// OrgId 组织 ID。
+	OrgId string `path:"id"`
+	// UserId 用户 ID。
+	UserId string `path:"uid"`
+}
+
+// SyncOrgsResp 组织同步结果摘要（CAS 全量对账一轮的写入动作统计）。
+type SyncOrgsResp {
+	// OrgsUpserted 注册表 upsert 条数（新建与更新合计）。
+	OrgsUpserted int `json:"orgsUpserted"`
+	// ParentsWritten 新增/修正的 parent 元组数。
+	ParentsWritten int `json:"parentsWritten"`
+	// ParentsDeleted 删除的 parent 元组数。
+	ParentsDeleted int `json:"parentsDeleted"`
+	// MembersWritten 新增的 member 元组数。
+	MembersWritten int `json:"membersWritten"`
+	// MembersDeleted 删除的 member 元组数。
+	MembersDeleted int `json:"membersDeleted"`
+	// OrgsDeleted 删除的组织数（CAS 已撤销且无引用）。
+	OrgsDeleted int `json:"orgsDeleted"`
+	// OrgsSkipped 因仍有授权/子组织引用而跳过删除的组织数。
+	OrgsSkipped int `json:"orgsSkipped"`
+	// DanglingUsers orgId 不在组织架构中而被跳过的用户数。
+	DanglingUsers int `json:"danglingUsers"`
+}
+
+// ---------------------------------------------------------------------------
+// 平台角色（管理面）——deprecated（去角色化改造）
+// ---------------------------------------------------------------------------
+// 去角色化说明：功能权限已改为引擎原生 permission 元组（type permission，
+// 授权 = 人/组织 × 权限点一条 can 元组，见 /v1/admin/permissions/*），角色
+// 不再参与 /me/permissions 的权限派生。本组接口保留仅为过渡期兼容（角色
+// 授予仍影响经 authzclient 取角色等展示链路），新界面不再消费。
+// ---------------------------------------------------------------------------
+// AssignRoleReq 平台角色授予/回收的请求体。
+type AssignRoleReq {
+	// RoleKey 角色 key（如 super_admin）。
+	RoleKey string `json:"roleKey,optional"`
+	// UserId 目标 ID（口径随 TargetType：user = 裸用户名即 JWT sub；org = 组织 ID）。
+	UserId string `json:"userId,optional"`
+	// TargetType 授予目标类型：user（缺省，向后兼容）或 org（授予组织，
+	// 组织成员含经 parent 链继承的成员均获得该角色）。
+	TargetType string `json:"targetType,optional"`
+}
+
+// RoleResp 平台角色信息。
+type RoleResp {
+	// RoleKey 角色 key。
+	RoleKey string `json:"roleKey"`
+	// Name 角色展示名。
+	Name string `json:"name"`
+}
+
+// RoleListResp 平台角色列表。
+type RoleListResp {
+	// Items 角色列表。
+	Items []RoleResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// ---------------------------------------------------------------------------
+// 规则（管理面）——deprecated（去角色化改造）
+// ---------------------------------------------------------------------------
+// 去角色化说明：/me/permissions 已改为引擎实时查询（type permission 的 can
+// 元组），规则表不再参与权限派生（规则表停用）。本组接口保留仅供历史数据
+// 查询/清理，新界面已移除；存量规则经 POST /v1/admin/permissions/migrate-from-rules
+// 一次性迁移为 permission 元组。
+// ---------------------------------------------------------------------------
+// UpsertRuleReq 新建/更新规则的请求体。
+type UpsertRuleReq {
+	// Id 规则 ID，空表示新建，非空表示更新。
+	Id string `json:"id,optional"`
+	// RoleKey 角色 key。
+	RoleKey string `json:"roleKey,optional"`
+	// Prefix 资源前缀（如 order:）。
+	Prefix string `json:"prefix,optional"`
+	// Action 动作码，空 = 服务级授权。
+	Action string `json:"action,optional"`
+}
+
+// RuleResp 规则信息。
+type RuleResp {
+	// Id 规则 ID。
+	Id string `json:"id"`
+	// RoleKey 角色 key。
+	RoleKey string `json:"roleKey"`
+	// Prefix 资源前缀。
+	Prefix string `json:"prefix"`
+	// Action 动作码，空 = 服务级。
+	Action string `json:"action"`
+}
+
+// RuleListResp 规则列表。
+type RuleListResp {
+	// Items 规则列表。
+	Items []RuleResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// RuleIdReq 路径参数：规则 ID。
+type RuleIdReq {
+	// Id 规则 ID。
+	Id string `path:"id"`
+}
+
+// ---------------------------------------------------------------------------
+// 权限点授权（管理面，去角色化改造）
+// ---------------------------------------------------------------------------
+// 说明：功能权限点本身成为引擎对象（model.fga v4 type permission，对象 id =
+// 权限码，如 redis:read，通配 *:read）。授权 = 人/组织 × 权限点一条 can 元组：
+//   permission:{code}#can@user:{id}      （user 目标）
+//   permission:{code}#can@org:{id}#member（org 目标，成员含 parent 链继承）
+// 判定面 /me/permissions 经 ListObjects 实时查询，授权/撤权即时生效。
+// GrantPermissionsReq 批量授予权限点的请求体。
+type GrantPermissionsReq {
+	// TargetType 授予目标类型：user（裸用户名即 JWT sub）或 org（组织 ID，
+	// 组织成员含沿 parent 链继承的成员均获得）。
+	TargetType string `json:"targetType,optional"`
+	// TargetId 目标 ID（口径随 TargetType）。
+	TargetId string `json:"targetId,optional"`
+	// Permissions 权限码列表（如 ["redis:read","*:manage"]）。
+	Permissions []string `json:"permissions,optional"`
+}
+
+// GrantPermissionsResp 批量授予结果。
+type GrantPermissionsResp {
+	// Granted 实际提交写引擎的元组数（重复授予由引擎读后写幂等保证）。
+	Granted int `json:"granted"`
+}
+
+// RevokePermissionReq 回收单个权限点的请求体（与授予对称）。
+type RevokePermissionReq {
+	// TargetType 回收目标类型：user 或 org。
+	TargetType string `json:"targetType,optional" form:"targetType,optional"`
+	// TargetId 目标 ID（口径随 TargetType）。
+	TargetId string `json:"targetId,optional" form:"targetId,optional"`
+	// Permission 权限码（如 redis:read）。
+	Permission string `json:"permission,optional" form:"permission,optional"`
+}
+
+// RevokePermissionResp 回收结果。
+type RevokePermissionResp {
+	// Revoked 实际删除的元组数（元组不存在时为 0，幂等）。
+	Revoked int `json:"revoked"`
+}
+
+// ListPermissionGrantsReq 查询主体现有权限点授予的请求体（授权向导回显）。
+type ListPermissionGrantsReq {
+	// TargetType 目标类型：user 或 org。
+	TargetType string `form:"targetType,optional"`
+	// TargetId 目标 ID（口径随 TargetType）。
+	TargetId string `form:"targetId,optional"`
+}
+
+// PermissionGrantListResp 主体现有权限点授予（直接授予，不含部门继承展开）。
+type PermissionGrantListResp {
+	// Codes 权限码列表（升序去重）。
+	Codes []string `json:"codes"`
+}
+
+// PermissionOverviewReq 某用户有效权限总览的请求体。
+type PermissionOverviewReq {
+	// UserId 目标用户（裸用户名即 JWT sub）。
+	UserId string `form:"userId,optional"`
+}
+
+// PermissionViaOrg 一路部门继承的权限来源。
+type PermissionViaOrg {
+	// OrgId 组织 ID。
+	OrgId string `json:"orgId"`
+	// OrgName 组织展示名（注册表未收录时回退组织 ID）。
+	OrgName string `json:"orgName"`
+	// Codes 经该组织授予的权限码（升序去重；不含沿 parent 链上级组织的授予）。
+	Codes []string `json:"codes"`
+}
+
+// PermissionOverviewResp 某用户的有效权限总览（管理面回显）。
+type PermissionOverviewResp {
+	// Direct 直接授予该用户的权限码（升序去重）。
+	Direct []string `json:"direct"`
+	// ViaOrgs 经部门授予的权限（按 orgId 升序）。
+	ViaOrgs []PermissionViaOrg `json:"viaOrgs"`
+	// Roles 过渡期展示：用户被授予的平台角色（去 platform_role: 前缀）——
+	// 去角色化后角色不参与 /me/permissions 派生，仅存量展示。
+	Roles []string `json:"roles"`
+}
+
+// MigrateRulesResp 规则表存量迁移结果。
+type MigrateRulesResp {
+	// Written 提交写引擎的 permission 元组数（重复迁移由引擎读后写幂等保证）。
+	Written int `json:"written"`
+	// Rules 读取到的规则条数（0 条时不动引擎，仅落审计）。
+	Rules int `json:"rules"`
+}
+
+// ---------------------------------------------------------------------------
+// 资源类型（管理面）
+// ---------------------------------------------------------------------------
+// ResourceTypeResp 资源类型信息。
+type ResourceTypeResp {
+	// Name 资源类型名。
+	Name string `json:"name"`
+	// Actions 支持的动作码列表。
+	Actions []string `json:"actions"`
+	// ManageCode 授权名单管理码（空 = 不设全权码，名单仅 owner/editor 可管）。
+	ManageCode string `json:"manageCode"`
+}
+
+// ResourceTypeListResp 资源类型列表。
+type ResourceTypeListResp {
+	// Items 资源类型列表。
+	Items []ResourceTypeResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// GrantRelationsReq 某资源类型的可授关系档位查询（GET）。
+type GrantRelationsReq {
+	// ResourceType 资源类型名（须已注册）。
+	ResourceType string `form:"resourceType"`
+}
+
+// GrantAction 单个 can_* 出口及其对应的真实页面按钮名（从菜单/按钮声明
+// 反查得到）。管理员看到的是"编辑 Topic、冻结 Topic"这类实际按钮，而不是
+// "can_edit/修改配置"这种抽象词。
+type GrantAction {
+	// Relation 引擎出口名（can_view/can_edit/can_delete/can_share/can_manage_grants）。
+	Relation string `json:"relation"`
+	// Titles 该出口在页面上对应的按钮名清单（按 sort 升序去重）；
+	// 菜单行（页面入口）计入 can_view。无对应按钮时为空（前端回退到抽象词）。
+	Titles []string `json:"titles"`
+}
+
+// GrantLevel 单个授权档位及其包含的实际操作出口（can_*），前端据此向
+// 管理员展示"这个档位能干什么"（如 可管理 = 编辑 Topic、删除 Topic、配置权限）。
+type GrantLevel {
+	// Relation 基础关系名：viewer/editor/owner/sharer。
+	Relation string `json:"relation"`
+	// Actions 该档位包含的引擎操作出口（该资源实际注册的 can_*，已按
+	// 继承语义展开，如 owner 含 can_view/can_edit/can_delete/can_manage_grants）。
+	Actions []string `json:"actions"`
+	// ActionDetails 每个出口对应的真实按钮名（与 Actions 等长、同序）；
+	// 前端优先用它渲染说明，Titles 为空时回退到 Actions 抽象映射。
+	ActionDetails []GrantAction `json:"actionDetails,omitempty"`
+}
+
+// GrantRelationsResp 可授关系档位：按注册类型 can_* 出口派生的基础关系阶梯
+// （viewer/editor/owner/sharer 子集，固定顺序），授权对话框档位数据源。
+type GrantRelationsResp {
+	// Relations 可授基础关系档位，如 ["viewer","editor","owner"]。
+	Relations []string `json:"relations"`
+	// Levels 每个档位对应的实际操作出口（与 Relations 等长、同序），
+	// 用于对话框展示档位说明（管理员不必看代码也知道每档对应哪些按钮）。
+	Levels []GrantLevel `json:"levels"`
+}
+
+// ---------------------------------------------------------------------------
+// 审计（管理面）
+// ---------------------------------------------------------------------------
+// ListAuditReq 审计查询的请求体（分页 + 过滤）。
+type ListAuditReq {
+	// Page 页码，从 1 开始。
+	Page int `form:"page,optional"`
+	// PageSize 每页条数。
+	PageSize int `form:"pageSize,optional"`
+	// UserId 按操作人过滤（可选）。
+	UserId string `form:"userId,optional"`
+	// ExcludeSystem 排除系统操作人（system）条目：定时任务审计默认不展示。
+	ExcludeSystem bool `form:"excludeSystem,optional"`
+}
+
+// AuditResp 审计条目。
+type AuditResp {
+	// Id 审计条目 ID。
+	Id string `json:"id"`
+	// Operator 操作人（用户 ID）。
+	Operator string `json:"operator"`
+	// Action 动作（如 create_org）。
+	Action string `json:"action"`
+	// Target 操作对象。
+	Target string `json:"target"`
+	// Snapshot 操作时的快照（JSON 文本）。
+	Snapshot string `json:"snapshot"`
+	// Status 状态（pending|committed|failed）。
+	Status string `json:"status"`
+	// CreatedAt 创建时间（RFC3339）。
+	CreatedAt string `json:"createdAt"`
+}
+
+// AuditListResp 审计列表（分页）。
+type AuditListResp {
+	// Items 审计条目列表。
+	Items []AuditResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// ---------------------------------------------------------------------------
+// 判定面（/v1/authz）
+// ---------------------------------------------------------------------------
+// CheckReq 权限判定请求：不带 user——一律从 JWT claims.sub 取当前用户。
+type CheckReq {
+	// Object 对象标识（如 order:o1）。
+	Object string `json:"object,optional"`
+	// Relation 关系/权限（如 can_view）。
+	Relation string `json:"relation,optional"`
+}
+
+// CheckResp 权限判定结果。
+type CheckResp {
+	// Allowed 是否允许。
+	Allowed bool `json:"allowed"`
+}
+
+// ListObjectsReq 枚举对象请求：不带 user——一律从 JWT claims.sub 取当前用户。
+type ListObjectsReq {
+	// Type 对象类型（如 order）。
+	Type string `json:"type,optional"`
+	// Relation 关系/权限（如 can_view）。
+	Relation string `json:"relation,optional"`
+}
+
+// ListObjectsResp 对象枚举结果。
+type ListObjectsResp {
+	// Objects 当前用户拥有 Relation 权限的对象标识列表。
+	Objects []string `json:"objects"`
+}
+
+// BatchCheckItem 批量判定单条请求（与 CheckReq 同构，由 BatchCheckReq 包裹）。
+type BatchCheckItem {
+	// Object 对象标识（如 kafka_topic:1）。
+	Object string `json:"object,optional"`
+	// Relation 关系/权限（如 can_view）。
+	Relation string `json:"relation,optional"`
+}
+
+// BatchCheckReq 批量权限判定请求：不带 user——一律从 JWT claims.sub 取当前用户。
+type BatchCheckReq {
+	// Items 待判定的 object/relation 组合列表。
+	Items []BatchCheckItem `json:"items,optional"`
+}
+
+// BatchCheckResp 批量权限判定结果：Results 与 Items 下标一一对应。
+type BatchCheckResp {
+	// Results 判定结果数组，与请求 Items 下标一一对应。
+	Results []bool `json:"results"`
+}
+
+// TupleReq 关系元组。
+type TupleReq {
+	// User 用户标识（如 user:u1）。
+	User string `json:"user,optional"`
+	// Relation 关系（如 viewer）。
+	Relation string `json:"relation,optional"`
+	// Object 对象标识（如 order:o1）。
+	Object string `json:"object,optional"`
+}
+
+// WriteRelationsReq 批量写关系请求（幂等），X-Service-Name 头记录来源服务。
+type WriteRelationsReq {
+	// Source 来源服务名（X-Service-Name 请求头，用于审计）。
+	Source string `header:"X-Service-Name,optional"`
+	// Tuples 关系元组列表。
+	Tuples []TupleReq `json:"tuples,optional"`
+}
+
+// WriteRelationsResp 批量写关系结果。
+type WriteRelationsResp {
+	// Written 实际写入的元组数（幂等跳过已存在的）。
+	Written int `json:"written"`
+}
+
+// ---------------------------------------------------------------------------
+// 当前用户（/v1/me）
+// ---------------------------------------------------------------------------
+// MePermissionsResp 当前用户（JWT claims.sub）的权限码列表（`服务:动作` 格式）。
+type MePermissionsResp {
+	// Perms 权限码列表（如 order:view）。
+	Perms []string `json:"perms"`
+}
+
+// ---------------------------------------------------------------------------
+// 菜单注册表（Phase C 改造①：菜单/资源动态配置落库）
+// ---------------------------------------------------------------------------
+// MeMenuItem 当前用户可见的一条菜单项（me/menus 响应项，扁平列表）。
+// 契约约定：仅返回 enabled 且按权限过滤后的行——permissionCode 空 = 全员
+// 可见（不过滤）；非空 = permGranted(有效码集合) 判定（与前端 hasPermission
+// 同口径）；资源驱动通道（resource_type + ListObjects can_view）正交保留。
+// List 按 (sort, id) 升序。前端按 path 首段归组到服务（/{service}/{page}
+// 路由约定），树组装按 parentId。
+type MeMenuItem {
+	// Id 菜单行 id。
+	Id int64 `json:"id"`
+	// ParentId 父菜单行 id（顶级/服务首页为 0）。
+	ParentId int64 `json:"parentId"`
+	// Title 菜单展示名。
+	Title string `json:"title"`
+	// Icon 图标名（可空 = 沿用服务图标）。
+	Icon string `json:"icon"`
+	// Path 完整路由。
+	Path string `json:"path"`
+	// Sort 排序值（升序）。
+	Sort int `json:"sort"`
+	// PermissionCode 权限标识（可空：空 = 全员可见，非空 = 准入门槛）。
+	PermissionCode string `json:"permissionCode"`
+}
+
+// MeMenusResp 当前用户可见菜单列表。
+type MeMenusResp {
+	// Items 可见菜单项（enabled + 权限过滤后，按 (sort, id) 升序）。
+	Items []MeMenuItem `json:"items"`
+}
+
+// MenuResp 菜单注册记录（管理面完整行，含 enabled 与时间戳）。
+type MenuResp {
+	// Id 行 id（PUT/DELETE 以 id 定位行）。
+	Id int64 `json:"id"`
+	// ParentId 父行 id（顶级/服务首页为 0）。
+	ParentId int64 `json:"parentId"`
+	// Type 行类型：menu | button。
+	Type string `json:"type"`
+	// Title 菜单展示名。
+	Title string `json:"title"`
+	// Icon 图标名。
+	Icon string `json:"icon"`
+	// Path 完整路由。
+	Path string `json:"path"`
+	// Sort 排序值。
+	Sort int `json:"sort"`
+	// PermissionCode 权限标识（可空 = 全员可见；页面级按钮必填；资源级按钮空）。
+	PermissionCode string `json:"permissionCode"`
+	// ResourceType 关联业务资源类型（空 = 纯菜单按权限码判定；非空 = 资源
+	// 驱动菜单：用户对该类型下任一资源有 can_view 关系即解锁入口）。
+	ResourceType string `json:"resourceType"`
+	// Relation 资源级按钮的资源关系。
+	Relation string `json:"relation"`
+	// Enabled 启用位。
+	Enabled bool `json:"enabled"`
+	// CreatedAt 创建时间（RFC3339）。
+	CreatedAt string `json:"createdAt"`
+	// UpdatedAt 更新时间（RFC3339）。
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// MenuListResp 菜单注册表列表。
+type MenuListResp {
+	// Items 全量菜单行（含 disabled，按 (sort, id) 升序）。
+	Items []MenuResp `json:"items"`
+	// Total 总数。
+	Total int `json:"total"`
+}
+
+// MenuRelationsResp 资源级按钮 relation 引擎出口白名单的响应体（有序）：
+// 菜单管理页「资源关系」下拉选项的数据源，清单为代码常量随版本发布。
+type MenuRelationsResp {
+	// Items 可用的 relation 出口清单（can_view/can_edit/can_delete/can_share/can_manage_grants）。
+	Items []string `json:"items"`
+}
+
+// CreateMenuReq 新建菜单行（行身份 = 自增 id；parentId 空 = 顶级/服务首页）。
+// 菜单行 permissionCode 可选（空 = 全员可见）；页面级按钮必填；资源级按钮
+// 无码。非空码唯一，重复 409；enabled 固定 true，建后经 PUT 可停用。
+type CreateMenuReq {
+	// Type 行类型：menu（默认）| button。
+	Type string `json:"type,optional"`
+	// ParentId 父行 id（按钮行必填；子菜单行指向父菜单行；顶级为空）。
+	ParentId int64 `json:"parentId,optional"`
+	// Title 菜单展示名。
+	Title string `json:"title,optional"`
+	// Icon 图标名。
+	Icon string `json:"icon,optional"`
+	// Path 完整路由。
+	Path string `json:"path,optional"`
+	// Sort 排序值。
+	Sort int `json:"sort,optional"`
+	// PermissionCode 权限标识（可空 = 全员可见；页面级按钮必填；资源级按钮空）。
+	PermissionCode string `json:"permissionCode,optional"`
+	// ResourceType 关联业务资源类型（可空 = 纯菜单；非空 = 资源驱动菜单，
+	// 须为引擎已注册类型名：小写字母开头的小写字母/数字/下划线）。
+	ResourceType string `json:"resourceType,optional"`
+	// Relation 资源级按钮的资源关系。
+	Relation string `json:"relation,optional"`
+}
+
+// UpdateMenuReq 更新菜单行：id 定位行（不可改），其余字段全量覆盖
+//（PUT 语义：未传字段按零值覆盖，前端编辑对话框应回填完整表单）。
+type UpdateMenuReq {
+	// Id 定位行（路径参数）。
+	Id int64 `path:"id"`
+	// Type 行类型：menu（默认）| button。
+	Type string `json:"type,optional"`
+	// Title 菜单展示名。
+	Title string `json:"title,optional"`
+	// Icon 图标名。
+	Icon string `json:"icon,optional"`
+	// Path 完整路由。
+	Path string `json:"path,optional"`
+	// Sort 排序值。
+	Sort int `json:"sort,optional"`
+	// PermissionCode 权限标识。
+	PermissionCode string `json:"permissionCode,optional"`
+	// ResourceType 关联业务资源类型。
+	ResourceType string `json:"resourceType,optional"`
+	// Relation 资源级按钮的资源关系。
+	Relation string `json:"relation,optional"`
+	// Enabled 启用位。
+	Enabled bool `json:"enabled,optional"`
+}
+
+// MenuIdReq 路径参数：菜单行 id。
+type MenuIdReq {
+	// Id 菜单行 id。
+	Id int64 `path:"id"`
+}
+
+// MenuButtonsReq 按钮声明查询：path 为父菜单完整路由（如 /kafka/topics）。
+type MenuButtonsReq {
+	Path string `form:"path"`
+}
+
+// MenuButtonItem 按钮行声明：permissionCode 即按钮授权码（页面级按钮的
+// 功能码，资源级按钮为空串），relation 为资源级操作的模型出口。
+type MenuButtonItem {
+	PermissionCode string `json:"permissionCode"`
+	Title          string `json:"title"`
+	ResourceType   string `json:"resourceType"`
+	Relation       string `json:"relation"`
+}
+
+// MenuButtonsResp 按钮声明列表。
+type MenuButtonsResp {
+	Items []MenuButtonItem `json:"items"`
+}
+
+// ---------------------------------------------------------------------------
+// 属性管理（ABAC 方案 A：主体/资源属性统一存 authz 引擎）
+// ---------------------------------------------------------------------------
+// SetSubjectAttributesReq 设置主体属性（覆盖式写：对 attrs 每个 key upsert，
+// 未传的 key 保留）。subject 形如 user:zhangsan / org:tech-frontend#member。
+type SetSubjectAttributesReq {
+	Subject string            `json:"subject"`
+	Attrs   map[string]string `json:"attrs"`
+}
+
+// SetSubjectAttributesResp 设置主体属性响应。
+type SetSubjectAttributesResp {
+	Subject string `json:"subject"`
+}
+
+// GetSubjectAttributesReq 查询主体属性。
+type GetSubjectAttributesReq {
+	Subject string `form:"subject"`
+}
+
+// GetSubjectAttributesResp 主体属性（key → value）。
+type GetSubjectAttributesResp {
+	Subject string            `json:"subject"`
+	Attrs   map[string]string `json:"attrs"`
+}
+
+// DeleteSubjectAttributeReq 删除主体单条属性（幂等）。
+type DeleteSubjectAttributeReq {
+	Subject string `form:"subject"`
+	Key     string `form:"key"`
+}
+
+// SetResourceAttributesReq 设置资源属性（覆盖式写）。resource 形如 topic:1。
+type SetResourceAttributesReq {
+	Resource string            `json:"resource"`
+	Attrs    map[string]string `json:"attrs"`
+}
+
+// SetResourceAttributesResp 设置资源属性响应。
+type SetResourceAttributesResp {
+	Resource string `json:"resource"`
+}
+
+// GetResourceAttributesReq 查询资源属性。
+type GetResourceAttributesReq {
+	Resource string `form:"resource"`
+}
+
+// GetResourceAttributesResp 资源属性（key → value）。
+type GetResourceAttributesResp {
+	Resource string            `json:"resource"`
+	Attrs    map[string]string `json:"attrs"`
+}
+
+// DeleteResourceAttributeReq 删除资源单条属性（幂等）。
+type DeleteResourceAttributeReq {
+	Resource string `form:"resource"`
+	Key      string `form:"key"`
+}
+
+// ---------------------------------------------------------------------------
+// ABAC 策略管理（方案 A：deny 拒绝 + allow 正向门槛 + 二元条件，无表达式引擎）
+// ---------------------------------------------------------------------------
+// PolicyItem 一条 ABAC 策略（effect：deny 拒绝 | allow 正向门槛）。
+type PolicyItem {
+	Id           string `json:"id"`
+	Name         string `json:"name"`
+	ResourceType string `json:"resourceType"`
+	Effect       string `json:"effect"`
+	SubjectAttr  string `json:"subjectAttr"`
+	Op           string `json:"op"`
+	ResourceAttr string `json:"resourceAttr"`
+	Value        string `json:"value"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// CreatePolicyReq 新建策略（op 白名单 lt/lte/gt/gte/eq/neq）。
+type CreatePolicyReq {
+	Name         string `json:"name,optional"`
+	ResourceType string `json:"resourceType,optional"`
+	Effect       string `json:"effect,optional"`
+	SubjectAttr  string `json:"subjectAttr,optional"`
+	Op           string `json:"op,optional"`
+	ResourceAttr string `json:"resourceAttr,optional"`
+	Value        string `json:"value,optional"`
+	Enabled      bool   `json:"enabled,optional"`
+}
+
+// CreatePolicyResp 新建策略响应。
+type CreatePolicyResp {
+	Policy PolicyItem `json:"policy"`
+}
+
+// ListPoliciesResp 策略列表。
+type ListPoliciesResp {
+	Items []PolicyItem `json:"items"`
+	Total int          `json:"total"`
+}
+
+// UpdatePolicyReq 更新策略（id 路径参数，其余字段全量覆盖）。
+type UpdatePolicyReq {
+	Id           string `path:"id"`
+	Name         string `json:"name,optional"`
+	ResourceType string `json:"resourceType,optional"`
+	Effect       string `json:"effect,optional"`
+	SubjectAttr  string `json:"subjectAttr,optional"`
+	Op           string `json:"op,optional"`
+	ResourceAttr string `json:"resourceAttr,optional"`
+	Value        string `json:"value,optional"`
+	Enabled      bool   `json:"enabled,optional"`
+}
+
+// PolicyIdReq 策略路径参数。
+type PolicyIdReq {
+	Id string `path:"id"`
+}
+
+// ---------------------------------------------------------------------------
+// 路由：管理面需 AdminRole 中间件；判定面与 me 仅需 JWT。
+// ---------------------------------------------------------------------------
+// 管理面：JWT + 管理员角色。
+@server (
+	jwt:        Auth
+	middleware: AdminRole
+	prefix:     /v1/admin
+)
+service authz-api {
+	// CreateOrg 创建组织。
+	@handler CreateOrg
+	post /orgs (CreateOrgReq) returns (OrgResp)
+
+	// ListOrgs 组织列表。
+	@handler ListOrgs
+	get /orgs returns (OrgListResp)
+
+	// UpdateOrg 更新组织。
+	@handler UpdateOrg
+	put /orgs/:id (UpdateOrgReq) returns (OrgResp)
+
+	// DeleteOrg 删除组织。
+	@handler DeleteOrg
+	delete /orgs/:id (OrgIdReq)
+
+	// SyncOrgs 手动触发 CAS 组织架构同步（全量对账收敛；定时任务同入口）。
+	@handler SyncOrgs
+	post /orgs/sync returns (SyncOrgsResp)
+
+	// AddMember 添加组织成员。
+	@handler AddMember
+	post /orgs/:id/members (MemberReq) returns (MemberResp)
+
+	// ListOrgMembers 列出组织直接成员。
+	@handler ListOrgMembers
+	get /orgs/:id/members (OrgIdReq) returns (MemberListResp)
+
+	// RemoveMember 移除组织成员。
+	@handler RemoveMember
+	delete /orgs/:id/members/:uid (MemberIdReq)
+
+	// AssignRole 授予平台角色。
+	@handler AssignRole
+	post /roles/assign (AssignRoleReq) returns (RoleResp)
+
+	// RevokeRole 回收平台角色。
+	@handler RevokeRole
+	post /roles/revoke (AssignRoleReq) returns (RoleResp)
+
+	// ListRoles 平台角色列表。
+	@handler ListRoles
+	get /roles returns (RoleListResp)
+
+	// GrantPermissions 批量授予权限点（去角色化改造；审计 grant_permission）。
+	@handler GrantPermissions
+	post /permissions/grants (GrantPermissionsReq) returns (GrantPermissionsResp)
+
+	// RevokePermission 回收权限点（与授予对称；审计 revoke_permission）。
+	@handler RevokePermission
+	delete /permissions/grants (RevokePermissionReq) returns (RevokePermissionResp)
+
+	// ListPermissionGrants 查询主体现有权限点授予（授权向导回显）。
+	@handler ListPermissionGrants
+	get /permissions/grants (ListPermissionGrantsReq) returns (PermissionGrantListResp)
+
+	// PermissionOverview 某用户的有效权限总览（直接授予/经部门/过渡期角色）。
+	@handler PermissionOverview
+	get /permissions/overview (PermissionOverviewReq) returns (PermissionOverviewResp)
+
+	// MigrateFromRules 规则表存量一次性迁移为 permission 元组（幂等；审计 migrate_rules）。
+	@handler MigrateFromRules
+	post /permissions/migrate-from-rules returns (MigrateRulesResp)
+
+	// ListPermissionSubjects 反向查询某权限码的直接授权主体（授权审计/排查用）。
+	@handler ListPermissionSubjects
+	get /permissions/subjects (ListPermissionSubjectsReq) returns (ListPermissionSubjectsResp)
+
+	// UpsertRule 新建/更新规则。
+	@handler UpsertRule
+	post /rules (UpsertRuleReq) returns (RuleResp)
+
+	// ListRules 规则列表。
+	@handler ListRules
+	get /rules returns (RuleListResp)
+
+	// DeleteRule 删除规则。
+	@handler DeleteRule
+	delete /rules/:id (RuleIdReq)
+
+	// ListResourceTypes 资源类型列表。
+	@handler ListResourceTypes
+	get /resource-types returns (ResourceTypeListResp)
+
+	// ListAudit 审计查询。
+	@handler ListAudit
+	get /audit (ListAuditReq) returns (AuditListResp)
+
+	// ListMenus 菜单注册表全量列表（含 disabled）。
+	@handler ListMenus
+	get /menus returns (MenuListResp)
+
+	// ListMenuRelations 资源级按钮 relation 引擎出口白名单（有序，菜单管理页
+	// 「资源关系」下拉选项数据源；代码常量随版本发布，只读不下发配置能力）。
+	@handler ListMenuRelations
+	get /menus/relations returns (MenuRelationsResp)
+
+	// CreateMenu 新建菜单行（service_key 唯一，重复 409）。
+	@handler CreateMenu
+	post /menus (CreateMenuReq) returns (MenuResp)
+
+	// UpdateMenu 更新菜单行（serviceKey 定位，不可改；其余字段全量覆盖）。
+	@handler UpdateMenu
+	put /menus/:key (UpdateMenuReq) returns (MenuResp)
+
+	// DeleteMenu 删除菜单行。
+	@handler DeleteMenu
+	delete /menus/:id (MenuIdReq)
+
+	// ABAC 方案 A：主体/资源属性 CRUD（管理面维护，供 ABAC 策略评估）。
+	@handler SetSubjectAttributes
+	post /attributes/subject (SetSubjectAttributesReq) returns (SetSubjectAttributesResp)
+
+	@handler GetSubjectAttributes
+	get /attributes/subject (GetSubjectAttributesReq) returns (GetSubjectAttributesResp)
+
+	@handler DeleteSubjectAttribute
+	delete /attributes/subject (DeleteSubjectAttributeReq)
+
+	@handler SetResourceAttributes
+	post /attributes/resource (SetResourceAttributesReq) returns (SetResourceAttributesResp)
+
+	@handler GetResourceAttributes
+	get /attributes/resource (GetResourceAttributesReq) returns (GetResourceAttributesResp)
+
+	@handler DeleteResourceAttribute
+	delete /attributes/resource (DeleteResourceAttributeReq)
+
+	// ABAC 策略 CRUD（deny/allow，管理面维护，评估叠加在资源鉴权链路）。
+	@handler CreatePolicy
+	post /policies (CreatePolicyReq) returns (CreatePolicyResp)
+
+	@handler ListPolicies
+	get /policies returns (ListPoliciesResp)
+
+	@handler UpdatePolicy
+	put /policies/:id (UpdatePolicyReq) returns (CreatePolicyResp)
+
+	@handler DeletePolicy
+	delete /policies/:id (PolicyIdReq)
+}
+
+// 判定面：JWT。
+@server (
+	jwt:    Auth
+	prefix: /v1/authz
+)
+service authz-api {
+	// Check 权限判定（fail-closed：引擎不可达即拒绝）。
+	@handler Check
+	post /check (CheckReq) returns (CheckResp)
+
+	// ListObjects 枚举当前用户有权的对象。
+	@handler ListObjects
+	post /list-objects (ListObjectsReq) returns (ListObjectsResp)
+
+	// BatchCheck 批量权限判定（一次判定多个 object/relation 组合，引擎层调 OpenFGA BatchCheck，
+	// 适用于列表页逐行 can_view 复核、详情页多按钮能力求值等场景，一次 RPC 替代 N 次）。
+	@handler BatchCheck
+	post /batch-check (BatchCheckReq) returns (BatchCheckResp)
+
+	// WriteRelations 批量写关系（幂等，服务间引导用）。
+	@handler WriteRelations
+	post /relations (WriteRelationsReq) returns (WriteRelationsResp)
+
+	// ListResourceGrants 列出某对象的关系授予（授权面排查/回显用）。
+	@handler ListResourceGrants
+	get /relations (ListResourceGrantsReq) returns (ResourceGrantsResp)
+
+	// DeleteResourceGrant 删除某对象的一条关系授予。
+	@handler DeleteResourceGrant
+	delete /relations (DeleteResourceGrantReq)
+}
+
+// 当前用户：JWT。
+@server (
+	jwt:    Auth
+	prefix: /v1/me
+)
+service authz-api {
+	// MePermissions 当前用户权限码列表。
+	@handler MePermissions
+	get /permissions returns (MePermissionsResp)
+
+	// MeMenus 当前用户可见菜单（enabled + 权限过滤，Phase C 改造①）。
+	@handler MeMenus
+	get /menus returns (MeMenusResp)
+
+	// MeOrgs 组织目录（id/名称/父级，登录即可读）：授权 UI 的部门选择器
+	// 数据源——资源创建/授权场景普通用户也要选部门，管理面 /admin/orgs
+	// 的超管门槛对其不可用；只读目录，组织写操作仍全部留在管理面。
+	@handler MeOrgs
+	get /orgs returns (OrgListResp)
+
+	// MeGrantRelations 资源类型的可授关系档位（登录即可读）：按注册类型的
+	// can_* 出口派生 viewer/editor/owner/sharer 阶梯——通用资源授权对话框
+	// 的档位数据源，业务页免于硬编码关系集合（新类型零前端改动接入）。
+	@handler MeGrantRelations
+	get /grant-relations (GrantRelationsReq) returns (GrantRelationsResp)
+}
+
+// ===== auth 迁移路由（2026-09-21 服务合并：auth 并入 authz）=====
+// 登录/会话/用户目录链路契约原样并入，类型定义与 auth.api 同源。
+// 登录：公开（CAS 登录页跳转 + 票据回调换 token）。
+@server (
+	prefix: /v1
+)
+service authz-api {
+	// CasLogin 拼 CAS 登录页跳转 URL（契约上无返回体，handler 以 302 重写）。
+	@handler CasLogin
+	get /auth/cas/login
+
+	// CasCallback CAS 票据回调：换用户信息 + 首登建档 + 签发平台 JWT。
+	@handler CasCallback
+	post /auth/cas/callback (CasCallbackReq) returns (TokenResp)
+}
+
+// 会话：JWT。
+@server (
+	jwt:    Auth
+	prefix: /v1
+)
+service authz-api {
+	// Refresh 续签：校验用户存在 + 实时取角色后签发新 token。
+	@handler Refresh
+	post /auth/refresh returns (TokenResp)
+
+	// Me 当前用户会话（sub/name/tenant/roles）。
+	@handler Me
+	get /me returns (MeResp)
+}
+
+// API key 与用户目录：JWT + 管理员。
+@server (
+	jwt:        Auth
+	middleware: AdminRole
+	prefix:     /v1
+)
+service authz-api {
+	// CreateApiKey 签发 API key（只返回一次明文，落存 SHA-256 摘要）。
+	@handler CreateApiKey
+	post /api-keys (CreateApiKeyReq) returns (ApiKeyResp)
+
+	// ListUsers 用户目录查询（CAS 为事实源）。
+	@handler ListUsers
+	get /auth/users (ListUsersReq) returns (UserListResp)
+}
+

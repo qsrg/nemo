@@ -1,0 +1,9 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "authz-admin",
+      "url": "http://localhost:5276"
+    }
+  ]
+}

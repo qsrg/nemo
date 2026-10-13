@@ -1,0 +1,61 @@
+# authz 服务默认配置（骨架期全默认值；真实 secret 生产由环境变量注入，
+# 仓库内不得出现真实 MySQL root 密码——本地凭据见 .local-dev.md，不进 git）
+Name: authz-api
+Host: 0.0.0.0
+Port: 8084
+Auth:
+  # dev 默认值：仅本机/骨架验证用
+  AccessSecret: dev-authz-access-secret
+  # token 有效期（秒）：3600 偏短导致调试频繁过期，改为 86400（1 天）
+  AccessExpire: 86400
+Engine:
+  # 引擎回环 HTTP 地址（go-sdk client 经此访问，禁止 import 引擎内部包）
+  HTTPAddr: 127.0.0.1:18084
+  StoreName: nemo-authz
+  # 引擎数据后端：生产 mysql（启动时自动执行 OpenFGA schema 迁移，幂等）；
+  # 本地无 MySQL 时改回 memory 可临时演示（重启丢授权数据，勿用于生产）
+  Datastore: mysql
+  # 引擎 MySQL 连接串（Datastore=mysql 时使用，指向 nemo_authz 引擎库；
+  # 引擎自建库，由 000_provision.sql 创建，版本管理职责不变）
+  MySQLDSN: "root:abc123456@tcp(127.0.0.1:3306)/nemo_authz?charset=utf8mb4&parseTime=true&loc=Local"
+  # 基础模型 DSL 文件（相对进程工作目录；bootstrap 与资源类型注册的合并基准）
+  ModelFile: model.fga
+Mysql:
+  # 业务库连接串（服务合并后单库 nemo_authz_biz：业务表 + users 用户表；
+  # 本地凭据见 .local-dev.md，不进 git）
+  Dsn: "root:abc123456@tcp(127.0.0.1:3306)/nemo_authz_biz?charset=utf8mb4&parseTime=true&loc=Local"
+# 审计对账定时任务（main 内 Ticker；非正值时代码兜底 1m/5m）
+Reconcile:
+  # 对账轮询间隔
+  Interval: 1m
+  # pending 超时分界（早于该时长的 pending 才入扫）
+  OlderThan: 5m
+# CAS 组织架构同步（orgsync 全量对账：拉 /orgs、/users → diff → 落引擎
+# parent/member 元组 + orgs 注册表；BaseURL 与 Cas.BaseURL 同源，
+# mock CAS 为明文 HTTP；Interval 即最大撤权滞后，非正值时代码兜底 5m）
+CasSync:
+  BaseURL: http://localhost:8443
+  Timeout: 5s
+  InsecureSkipVerify: false
+  Enabled: true
+  Interval: 5m
+# CAS 登录配置（服务合并：auth 并入 authz，登录票据校验由本服务承担；
+# Service 是 CAS 回调地址，服务端口 8084——与前端登录接票页一致）
+Cas:
+  BaseURL: http://localhost:8443
+  ValidatePath: ""
+  Service: "http://127.0.0.1:8084/v1/auth/cas/callback"
+  InsecureSkipVerify: false
+# 初始超管声明（幂等引导 Bootstrap 段）：服务初始化时授 permission:*.*
+# 全通配权限（码 *:* 匹配任意 服务:动作）。可配置多个用户与组织——
+# AdminUsers 为登录名（如 admin/ops-admin）；AdminOrgs 为组织编码
+# （该组织全部成员继承超管，如 ops——谨慎：该组织下所有成员皆为超管）。
+# 未声明 AdminUsers 时默认 ["admin"]（向后兼容既有环境）；AdminOrgs 默认
+# 空（不授组织维度超管，最小权限）。引导只做初始装配，撤权走控制台授权页。
+Bootstrap:
+  AdminUsers:
+    - admin
+  AdminOrgs: []
+# AdminRoles 已废弃：去角色化后超管鉴权统一走引擎 Check(can, permission:*.*)，
+# 本字段不再被任何逻辑读取，仅为 yaml 解析兼容保留空列表。
+AdminRoles: []

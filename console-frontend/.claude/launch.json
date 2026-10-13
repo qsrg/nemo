@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "console-test",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "console",
+        "exec",
+        "vite"
+      ],
+      "port": 5279,
+      "autoPort": true
+    },
+    {
+      "name": "authz-admin-test",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "authz-admin",
+        "exec",
+        "vite"
+      ],
+      "port": 5278,
+      "autoPort": true
+    }
+  ]
+}

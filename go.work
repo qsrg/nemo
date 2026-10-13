@@ -1,0 +1,11 @@
+go 1.26.3
+
+use (
+	./kit
+	./services/authz
+	./services/kafka
+	./services/redis
+	./services/zookeeper
+	./services/sample
+	./services/rocketmq
+)

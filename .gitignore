@@ -1,0 +1,11 @@
+.superpowers/
+node_modules/
+dist/
+logs/
+*.log
+.DS_Store
+.local-dev.md
+.codegraph/
+.idea/
+.vite/
+.zcode/

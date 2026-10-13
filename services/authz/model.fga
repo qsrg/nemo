@@ -1,0 +1,51 @@
+# 首版授权模型（来源：permission-design v1.1 §4.2，模型版本 v1）。
+# B 阶段改造 2.1：platform_role.assignee 扩展 [user, org#member]——角色可授予
+# 组织，组织成员（含经 parent 链自上级组织继承而来的成员，org.member 的既有
+# 传递语义）即获得该角色。模型版本随 EnsureModel 递增（v2）。
+# Task 6 的模型注册机制在此文件之上扩展。
+# Phase C 曾内置 condition level_ok 与 type topic（模型版本 v3）；2026-09-16
+# topic 已迁移到资源类型注册表（name=topic），level_ok 无判定消费方一并移除。
+# 去角色化改造（模型版本 v4）：新增 type permission——功能权限点本身成为引擎
+# 对象，对象 id = 权限码（如 redis:read，通配 *:read）。授权 = 人/组织 × 权限点
+# 一条 can 元组（permission:{code}#can@user:{id} 或 @org:{id}#member），组织
+# 继承由 org#member userset 原生承担，判定走 ListObjects/Check 实时查询，撤权
+# 即时生效——不再经 roles claim × 规则表派生。
+# 继承方向反转（模型版本 v5，CAS 组织同步落地后的语义修正）：v1-v4 的
+# member from parent 语义是"父部门成员自动成为子部门成员"——给叶子部门
+# 授权，祖先部门的成员都获得权限，与管理员直觉相反。v5 改为 member from
+# child：子部门成员沿 child 关系递归聚合进父部门成员集合——给任一部门
+# 授权，该部门子树内（直属 + 全部子孙部门）的人员均获得权限；授权叶子
+# 不再影响兄弟/祖先部门。配套：组织层级同时写 parent（org:父#parent@org:子，
+# 供防环遍历）与 child（org:子#child@org:父，供判定聚合）两条互逆元组。
+model
+  schema 1.1
+
+type user
+
+type org
+  relations
+    define parent: [org]
+    define child: [org]
+    define admin: [user] or admin from child
+    define member: [user] or admin or member from child
+
+type platform_role
+  relations
+    define assignee: [user, org#member]
+
+type permission
+  relations
+    define can: [user, org#member]
+
+type order
+  relations
+    define org: [org]
+    define owner: [user]
+    define sharer: [user] or owner or admin from org
+    define editor: [user] or owner
+    define viewer: [user] or editor
+    define member_view: viewer or member from org
+    define can_view: member_view
+    define can_edit: editor
+    define can_delete: owner
+    define can_share: sharer

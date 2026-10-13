@@ -1,0 +1,23 @@
+# zookeeper 服务默认配置（本地 dev 值；真实 secret/密码生产由环境变量注入，
+# 仓库内不得出现真实 MySQL root 密码——本地凭据见 .local-dev.md，不进 git）
+Name: zookeeper-api
+Host: 0.0.0.0
+# 独立服务端口（前端微应用 5277 → 后端 8086；kafka 为 5275/8085 顺延）
+Port: 8087
+Auth:
+  # dev 默认值：与 authz 共享同一 secret，才能解析平台签发 token
+  AccessSecret: dev-authz-access-secret
+  AccessExpire: 3600
+Mysql:
+  # 独立业务库连接串：instances 表 + 审计表 audits（独立建库 nemo_zookeeper；
+  # 首次需跑 cmd/provision 建库，本地凭据见 .local-dev.md，不进 git）
+  Dsn: "root:abc123456@tcp(127.0.0.1:3306)/nemo_zookeeper?charset=utf8mb4&parseTime=true&loc=Local"
+Authz:
+  # 集中式授权服务根地址（判定 + relations 通用接口）
+  BaseURL: http://127.0.0.1:8084
+  # 单次判定调用超时
+  Timeout: 5s
+  # 服务身份（创建集群写 owner 元组用）：svc-zookeeper 须持 zookeeper:manage 码
+  # （permissions/grants 授予，见 scripts/restore-dev.sh）。生产凭据由环境
+  # 变量注入；CASBase/User 为空时服务身份不启用，创建路径回落用户身份
+  #（行为等价修复前，依赖对账端点兜底）。

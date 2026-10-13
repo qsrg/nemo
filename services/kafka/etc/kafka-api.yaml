@@ -1,0 +1,21 @@
+# kafka 服务默认配置（本地 dev 值；真实 secret/密码生产由环境变量注入，
+# 仓库内不得出现真实 MySQL root 密码——本地凭据见 .local-dev.md，不进 git）
+Name: kafka-api
+Host: 0.0.0.0
+# 独立服务端口（前端微应用 5275 → 后端 8085；原内嵌于 authz 的 kafka 路由
+# 迁移至此，authz 专注平台级授权/审计/组织）
+Port: 8085
+Auth:
+  # dev 默认值：与 authz 共享同一 secret，才能解析平台签发 token
+  AccessSecret: dev-authz-access-secret
+  AccessExpire: 3600
+Mysql:
+  # 独立业务库连接串：topics 表 + 审计表 audits（2026-09-23 起 kafka 独立建库
+  # nemo_kafka，不再复用 authz 的 nemo_authz_biz；首次需跑 cmd/provision 建库，
+  # 本地凭据见 .local-dev.md，不进 git）
+  Dsn: "root:abc123456@tcp(127.0.0.1:3306)/nemo_kafka?charset=utf8mb4&parseTime=true&loc=Local"
+Authz:
+  # 集中式授权服务根地址（判定 + relations 通用接口）
+  BaseURL: http://127.0.0.1:8084
+  # 单次判定调用超时
+  Timeout: 5s

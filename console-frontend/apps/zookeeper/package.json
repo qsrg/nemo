@@ -1,0 +1,21 @@
+{
+  "name": "@nemo/app-zookeeper",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite --port 5278 --strictPort",
+    "build": "vite build --base /apps/zookeeper/"
+  },
+  "dependencies": {
+    "@nemo/http": "workspace:*",
+    "@nemo/shared": "workspace:*",
+    "element-plus": "^2.9.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  }
+}

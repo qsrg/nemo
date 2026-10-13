@@ -1,0 +1,19 @@
+# OpenFGA 常用能力探针模型(仅测试用,非业务模型):
+# 覆盖公开访问、排除(but not)、条件(condition)与普通关系。
+model
+  schema 1.1
+
+type user
+
+type doc
+  relations
+    define reader: [user, user:*]  # 同时接受具体用户与通配元组(两者语义不同)
+    define direct: [user]
+    define banned: [user]
+    define viewer: direct but not banned
+    define cond_reader: [user with is_employee]
+
+# 条件参数取自 check 请求的 context(标量),不接收对象类型
+condition is_employee(department: string) {
+  department == "eng"
+}

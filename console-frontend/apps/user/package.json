@@ -1,0 +1,21 @@
+{
+  "name": "@nemo/app-user",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite --port 5274 --strictPort",
+    "build": "vite build --base /apps/user/"
+  },
+  "dependencies": {
+    "@nemo/http": "workspace:*",
+    "@nemo/shared": "workspace:*",
+    "element-plus": "^2.9.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "console-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream run dev",
+    "build": "pnpm -r run build"
+  }
+}

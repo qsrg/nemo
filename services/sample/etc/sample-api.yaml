@@ -1,0 +1,13 @@
+Name: sample-api
+Host: 0.0.0.0
+Port: 8085
+# 平台 JWT 校验（统一鉴权）：与 authz 共享同一 secret，才能解析平台签发 token
+Auth:
+  AccessSecret: dev-authz-access-secret
+  AccessExpire: 3600
+Mysql:
+  Dsn: ""
+# 集中式授权服务接入（kit/authz Require 冒烟路由 /v1/managed-items/:id 使用）
+Authz:
+  BaseURL: http://127.0.0.1:8084
+  Timeout: 5s
